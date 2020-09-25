@@ -41,9 +41,9 @@ class Card:
         self.suit = suit
         self.value = value
         if self.value != 0:
-            self.filename = './cards/' + str(self) + '.png'
+            self.filename = './files/cards/' + str(self) + '.png'
         else:
-            self.filename = './cards/back.png'
+            self.filename = './files/cards/back.png'
 
     def __gt__(self, other):
         return self.value > other.value
