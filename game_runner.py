@@ -1,8 +1,11 @@
-import current_build.front_end_new as interface
-import current_build.saver as saver
-import current_build.PokerBot as Pokerbot
+import interface
+import saver
+import cards_backend
 import math
 import numpy as np
+import discord
+import pickle
+from random import randint
 
 
 if __name__ == '__main__':
@@ -41,9 +44,6 @@ def partioner(amount, partition):
 
 # -------------------------------------------------------------------------------------------------------------------- #
 
-
-import pickle
-import current_build.PokerBot as PokerBot
 
 class GameState:
     def __init__(self, channel, host, players):
@@ -113,7 +113,7 @@ def channel_occupied(channel):
 
 class PRState:          # PlayerRoundState: stores all round-specific player data
     def __init__(self, hole_cards):
-        self.hole_cards = Pokerbot.CardSet(hole_cards)
+        self.hole_cards = cards_backend.CardSet(hole_cards)
         self.hand = None
         self.folded = False
         self.all_in = False     # p
@@ -163,12 +163,15 @@ class Player:
 
     async def display_hand(self, channel, show_name=True):
         hand = self.prstate.hand
-        cards = PokerBot.CardSet(hand.handvalue[1:])
+        cards = cards_backend.CardSet(hand.handvalue[1:])
         if show_name:
             await channel.send("{}: {}".format(self.name, hand.handname))
         else:
             await channel.send(hand.handname)
         await cards.send_to(channel)
+
+
+
 
 
 async def lobby(host, channel):     # joining process and starting game
@@ -260,7 +263,11 @@ async def new_game(host, channel):
         if response == 'no':
             return
     userlist = await lobby(host, channel)
+    # initlist = [900, 800, 1000]
     playerlist = [Player(p, 1000) for p in userlist]
+    # playerlist = []
+    # for i, p in enumerate(userlist):
+    #     playerlist.append(Player(p, initlist[i]))
     gamestate = GameState(channel, host, playerlist)  # saver.GameState(channel, host, playerlist)
     gamestate.save()
     await game(channel)
@@ -293,14 +300,14 @@ async def single_round_game(host, channel):
 
 async def poker_round(channel):
     print('round started')
-      # TODO: if roundnumber is implemented, display it (special case for 1: let's begin!)
+
     gamestate = saver.get_gamestate(channel)
+    gamestate.roundnumber += 1
     current_players = gamestate.current_players
     print("In round?", gamestate.in_round)
     if not gamestate.in_round:
-        await channel.send('\n New round!')
         gamestate.in_round = True
-        deck = Pokerbot.shuffled_deck()
+        deck = cards_backend.shuffled_deck()
         for p in current_players:
             hole_cards, deck = deck[:2], deck[2:]
             p.prstate = PRState(hole_cards)
@@ -312,8 +319,16 @@ async def poker_round(channel):
         gamestate.roundstate = saver.RoundState(current_players, sm_blind_index, community_cards)
         gamestate.save()
 
-    roundstate = gamestate.roundstate
+        newroundstring = '----------------\n'
+        if gamestate.roundnumber == 1:
+            newroundstring += "***Let\'s begin!***"
+        else:
+            newroundstring += " ***New round!***"
 
+        newroundstring += '\n----------------'
+        await channel.send(newroundstring)
+
+    roundstate = gamestate.roundstate
     await roundstate.send_community_cards(channel)
 
     print("Previous raiser is {}".format(roundstate.previous_raiser))
@@ -326,7 +341,10 @@ async def poker_round(channel):
         if len(roundstate.non_folded_players()) == 1:  # all but 1 folded => win by default
             break
 
+
         if roundstate.new_cycle_flag:
+            if roundstate.n_active_players() == 1:
+                break
             roundstate.cycle_number += 1
             if roundstate.cycle_number <= 3:
                 n = [0,3,4,5][roundstate.cycle_number]
@@ -339,10 +357,10 @@ async def poker_round(channel):
                 break
 
         if roundstate.turn_number == 1:
-            roundstate = await blind_turn(roundstate, channel, 1)
+            roundstate = await blind_turn(roundstate, channel, 1, gamestate.roundnumber)
 
         elif roundstate.turn_number == 2:
-            roundstate = await blind_turn(roundstate, channel, 2)
+            roundstate = await blind_turn(roundstate, channel, 2, gamestate.roundnumber)
 
 
 
@@ -360,6 +378,10 @@ async def poker_round(channel):
         gamestate.roundstate = roundstate
         gamestate.save()
 
+    await channel.send("These were the community cards:")
+    roundstate.reveal_cards(5)
+    await roundstate.send_community_cards(channel)
+
     for p in roundstate.current_players:   # adds entire hand to each player to determine winner(s) (folded may also
         # want to show hand)
         p.prstate.hand = (roundstate.community_cards + p.prstate.hole_cards).to_hand()
@@ -376,7 +398,7 @@ async def poker_round(channel):
     if len(roundstate.non_folded_players()) == 1:
         winner = winners[0]   # 1 non-folded => 1 winner
         await channel.send("{} won! \nSince everybody else folded, you may choose not to show your hand."
-                           "\nDo you want to show your hand?".format(winners[0].name))
+                           " Do you want to show your hand?".format(winners[0].name))
         yesnodict = {"✅": 'yes', "❌": 'no'}
         response = await interface.reaction_menu(yesnodict, winner, channel)
         if response == 'yes':
@@ -389,7 +411,7 @@ async def poker_round(channel):
     competing_losers = [m for m in roundstate.non_folded_players() if m not in winners]
     competing_losers.sort(key=lambda p: p.prstate.hand)
     if len(competing_losers) != 0:
-        await channel.send("These are the hands of the losing playing who didn't fold:")
+        await channel.send("These are the hands of the losing players who didn't fold:")
     for cl in competing_losers:
         await cl.display_hand(channel)
 
@@ -404,7 +426,6 @@ async def poker_round(channel):
 
     ### POT DIVISION ##
     roundstate.sidepots = sorted(list(set(roundstate.sidepots)))
-
     pot = np.zeros(len(roundstate.sidepots) + 1, dtype=int)
     for p in roundstate.current_players:    # calculates amounts in sidepots
         partition = partioner(p.prstate.invested, roundstate.sidepots)
@@ -430,9 +451,9 @@ async def poker_round(channel):
 
     for w in winners:
         w.money += w.prstate.winnings
-        await channel.send("{} won ${}".format(w.name, w.prstate.winnings))
+        await channel.send("{} won ${}".format(w.name, w.prstate.winnings - w.prstate.invested))  # TODO: net gain or total winnings?
 
-    if max_eligibility != len(pot) - 1: # if this is the case, all money has been divided so no returns
+    if max_eligibility != len(pot) - 1:  # if this is the case, all money has been divided so no returns
         for p in current_players:
             returns = sum(p.prstate.partition[max_eligibility+1:])
             if returns > 0:
@@ -445,7 +466,7 @@ async def poker_round(channel):
         if p.money == 0:
             p.eliminated = True
             eliminated.append(p)
-    elimination_text = ','.join([p.mention() for p in eliminated])
+    elimination_text = ', '.join([p.mention() for p in eliminated])
     if len(eliminated) == 0:
         await channel.send("Everybody survived this round")
     elif len(eliminated) == 1:
@@ -471,6 +492,30 @@ async def turn(roundstate, channel):
     print(', '.join(["{}: ${}".format(p.name, p.money) for p in roundstate.current_players]))
     player = roundstate.turn_player
 
+    # select available moves for current player
+    current_options = ['fold', 'all-in']
+    if roundstate.n_active_players() == 1:  # if one player left who has yet to equal the bet
+        if player.prstate.invested < roundstate.min_bet:
+            if player.money > roundstate.min_bet - player.prstate.invested:
+                current_options.append('call')
+                current_options.remove('all-in')  # all-in would constitute pointless raise
+
+            # if not, default options apply
+
+        else:
+            return roundstate
+    else:
+        if player.prstate.invested == roundstate.min_bet:
+            current_options.append('check')
+            current_options.remove('fold')
+        elif player.money + player.prstate.invested > roundstate.min_bet:  # strict inequality, equality is all-in
+            current_options.append('call')
+        if player.money >= roundstate.min_bet - player.prstate.invested + roundstate.min_raise:  # TODO: changed...
+            current_options.append('raise')
+
+
+
+    # show players game status
     statusupdate = ['Game status:']
     folded = roundstate.folded_players()
     if len(folded) != 0:
@@ -484,22 +529,17 @@ async def turn(roundstate, channel):
     if len(active_p) != 0:
         statusupdate.append(" - Active players: {}".format(', '.join([p.name + " ($" + str(p.money) + ")" for p in active_p])))
 
-    statusupdate.append("The current bet is ${} and the minimum raise is ${}".format(roundstate.min_bet, roundstate.min_raise))
-    statusupdate.append("There is ${} in the pot".format(roundstate.pot_amount()))
+    statusupdate.append("The current bet: ${}, minimum raise: ${}".format(roundstate.min_bet, roundstate.min_raise))
+    statusupdate.append("Pot: ${}".format(roundstate.pot_amount()))
     await channel.send('```' + '\n'.join(statusupdate) + '```')
     print('initiated {}\'s turn'.format(player.name))
     await channel.send("{}, it's your turn. You have ${}, and you have bet ${} so far".format(player.mention(), player.money, player.prstate.invested))
-    total_options_dict = {"✅": 'check', "🛑": 'fold', "💯": 'all-in', "🆙": 'raise', "☎️":'call'}
+    total_options_dict = {"✅": 'check', "🛑": 'fold', "💯": 'all-in', "🆙": 'raise', "☎️": 'call'}
+
+
+
+
     inv = {y: x for x,y in total_options_dict.items()}
-    # select available moves for current player
-    current_options = ['fold', 'all-in']
-    if player.prstate.invested == roundstate.min_bet:
-        current_options.append('check')
-        current_options.remove('fold')
-    elif player.money > roundstate.min_bet:  # strict inequality, equality is all-in
-        current_options += ['fold', 'call']
-    if player.money >= roundstate.min_bet + roundstate.min_raise:
-        current_options.append('raise')
     current_option_dict = {inv[s]: s for s in current_options}
 
 
@@ -515,7 +555,6 @@ async def turn(roundstate, channel):
     elif move == 'fold':
         await channel.send("{} folded.".format(player.name))
         player.prstate.folded = True
-
 
     elif move == 'raise':
         await channel.send("How much do you want to raise? (Send \'cancel\' to cancel)")
@@ -537,6 +576,14 @@ async def turn(roundstate, channel):
             elif roundstate.min_raise > raise_amount:
                 await channel.send("The minimum raise is ${}".format(roundstate.min_raise))
             else:
+                if raise_amount == 42:
+                    await channel.send("What the fuck did you just fucking say about me, you little bitch? I'll have you know I graduated top of my class in the Navy Seals, and I've been involved in numerous secret raids on Al-Quaeda, and I have over 300 confirmed kills. I am trained in gorilla warfare and I'm the top sniper in the entire US armed forces. You are nothing to me but just another target. I will wipe you the fuck out with precision the likes of which has never been seen before on this Earth, mark my fucking words. You think you can get away with saying that shit to me over the Internet? Think again, fucker. As we speak I am contacting my secret network of spies across the USA and your IP is being traced right now so you better prepare for the storm, maggot. The storm that wipes out the pathetic little thing you call your life. You're fucking dead, kid. I can be anywhere, anytime, and I can kill you in over seven hundred ways, and that's just with my bare hands. Not only am I extensively trained in unarmed combat, but I have access to the entire arsenal of the United States Marine Corps and I will use it to its full extent to wipe your miserable ass off the face of the continent, you little shit. If only you could have known what unholy retribution your little \"clever\" comment was about to bring down upon you, maybe you would have held your fucking tongue. But you couldn't, you didn't, and now you're paying the price, you goddamn idiot. I will shit fury all over you and you will drown in it. You're fucking dead, kiddo.")
+
+                if raise_amount == 69:
+                    await channel.send(file=discord.File('nice_gif.gif'))
+
+                if raise_amount == 420:
+                    await channel.send("Blaze it")
                 break
 
 
@@ -573,7 +620,7 @@ async def turn(roundstate, channel):
         if bet > roundstate.min_bet:  # all-in behaves like raise
             print("all-in went to raise")
             roundstate.previous_raiser = player
-            roundstate.min_bet = bet
+            roundstate.min_bet = player.prstate.invested #  += bet   # TODO is dit zo? += of = ... changed
             if raise_amount > roundstate.min_raise:  # if all-in raise exceeds minimum raise, minimum raise is adjusted
                 roundstate.min_raise = raise_amount
 
@@ -596,14 +643,14 @@ async def turn(roundstate, channel):
     return roundstate
 
 
-async def blind_turn(roundstate, channel, size):  # TODO: check rules. For now, bet or all-in automatically.
+async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rules. For now, bet or all-in automatically.
     # size: 1=small, 2 = big
     player = roundstate.turn_player
     # if size == 2:
     #     roundstate.previous_raiser = roundstate.current_players[(roundstate.player_index + 1)%roundstate.n]  # TODO: moet dit?
     await channel.send("{}, you're the {} blind ".format(player.mention(), ['small', 'big'][size-1]))
 
-    blind_amounts = [0, 10, 20]  # hardcoded for now, TODO: changeable in settings
+    blind_amounts = [0, 10 + 5*roundnumber, 20 + 10*roundnumber]  # hardcoded for now, TODO: changeable in settings
     amount = blind_amounts[size]
     roundstate.min_bet = amount
     roundstate.min_raise = blind_amounts[size] - blind_amounts[size-1]
@@ -623,9 +670,7 @@ async def blind_turn(roundstate, channel, size):  # TODO: check rules. For now, 
         print(player.money)
         player.prstate.invested = amount
 
-        await channel.send("You bet ${} . You have ${} left.\n"
-                           "The minimum raise is {}".format(amount,
-                                                            player.money, roundstate.min_raise))
+        await channel.send("You bet ${} . You have ${} left.".format(amount, player.money))
 
     await channel.send("---")
     return roundstate

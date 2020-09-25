@@ -1,5 +1,5 @@
 import pickle
-import current_build.PokerBot as PokerBot
+import cards_backend
 
 class GameState:
     def __init__(self, channel, host, players):
@@ -71,8 +71,8 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
         self.turn_number = 1
         self.cycle_number = 0
         self.new_cycle_flag = False
-        self.community_cards = PokerBot.CardSet(community_cards)
-        self.public_cards = PokerBot.CardSet(5*[PokerBot.Card(0,0)])
+        self.community_cards = cards_backend.CardSet(community_cards)
+        self.public_cards = cards_backend.CardSet(5*[cards_backend.Card(0,0)])
         self.sidepots = [] #[0]
 
     def next_player(self):  # sets turn player to next one
@@ -80,7 +80,7 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
             print('Next_player loop')
             self.player_index = (self.player_index + 1) % len(self.current_players)
 
-            if self.turn_player == self.previous_raiser: # edit
+            if self.turn_player == self.previous_raiser:  # edit
                 print('new cycle')
                 self.new_cycle_flag = True
                 # self.cycle_number += 1
@@ -100,7 +100,7 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
         return len(self.active_players())
 
     def active_players(self):
-        return [p for p in self.current_players if not p.prstate.folded and not p.prstate.all_in]
+        return [p for p in self.current_players if not (p.prstate.folded or p.prstate.all_in)]
 
     def non_folded_players(self):
         return [p for p in self.current_players if not p.prstate.folded]
@@ -110,6 +110,7 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
 
     def all_in_players(self):
         return [p for p in self.current_players if p.prstate.all_in]
+
     # @property
     # def small_blind(self):
     #     return self.current_players[self.sm_blind_index]
@@ -125,7 +126,7 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
 
     def reveal_cards(self, n):
         open_cards = self.community_cards[:n]
-        self.public_cards = PokerBot.CardSet(open_cards + (5-n)*[PokerBot.Card(0,0)])
+        self.public_cards = cards_backend.CardSet(open_cards + (5-n)*[cards_backend.Card(0,0)])
 
     async def send_community_cards(self, channel):
         await self.public_cards.send_to(channel)
