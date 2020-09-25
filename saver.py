@@ -15,12 +15,12 @@ class GameState:
 
 
     def save(self): #issue: can't pickle channel object, fixed?
-        save_file = open("C:/Users/benja/PycharmProjects/PokerBot/savefile.dat", 'rb')
+        save_file = open("./files/savefile.dat", 'rb')
         save_dict = pickle.load(save_file)
         save_file.close()
 
         save_dict[self.id] = self
-        save_file = open("C:/Users/benja/PycharmProjects/PokerBot/savefile.dat", 'wb')
+        save_file = open("./files/savefile.dat", 'wb')
         pickle.dump(save_dict, save_file)
         save_file.close()
 
@@ -47,7 +47,7 @@ class GameState:
 
 
 def get_gamestate(channel):
-    save_file = open("C:/Users/benja/PycharmProjects/PokerBot/savefile.dat", 'rb')
+    save_file = open("./files/savefile.dat", 'rb')
     save_dict = pickle.load(save_file)
     save_file.close()
     if channel.id in save_dict:

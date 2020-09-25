@@ -41,9 +41,9 @@ class Card:
         self.suit = suit
         self.value = value
         if self.value != 0:
-            self.filename = 'C:/Users/benja/PycharmProjects/PokerBot/cards/' + str(self) + '.png'
+            self.filename = './cards/' + str(self) + '.png'
         else:
-            self.filename = 'C:/Users/benja/PycharmProjects/PokerBot/cards/back.png'
+            self.filename = './cards/back.png'
 
     def __gt__(self, other):
         return self.value > other.value
@@ -394,7 +394,7 @@ class CardSet:
     async def send_to(self, channel):
         filenames = [card.filename for card in self.cards]
         image = merge_images(filenames)
-        path = "C:/Users/benja/PycharmProjects/PokerBot/CardImgBuffer.png"
+        path = "./files/CardImgBuffer.png"
         image.save(path)
         await channel.send(file=discord.File(path))
 
