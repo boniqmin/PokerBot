@@ -24,6 +24,7 @@ def merge_images(filenames):
 
     return result
 
+
 class Card:
     suitname = {0: '', 1: 'Diamonds', 2: 'Clubs', 3: 'Hearts', 4: 'Spades'}
     valuename = {0: 'back', 1: 'Low Ace', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10',
@@ -31,7 +32,7 @@ class Card:
 
     suitabr = {0: None, 1: 'D', 2: 'C', 3: 'H', 4: 'S'}
     valueabr = {0: 'back', 1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10',
-                 11: 'J', 12: 'Q', 13: 'K', 14: 'A'}  # low ace is now redundant
+                11: 'J', 12: 'Q', 13: 'K', 14: 'A'}  # low ace is now redundant
 
     def __init__(self, suit, value):
         if not (0 <= suit <= 4 and 0 <= value <= 14):
@@ -98,47 +99,10 @@ def find_n(n, card_values, more=False):  # returns cards value of the highest n-
 ########################################################################################################################
 # note: usage of term 'hand' is outdated, the param will in general be a CardSet object
 
-
-
-
-# def check_straight_flush(hand): # also checks for royal (maybe integrate normal straight?)
-#     cards = copy.copy(hand.cards)  # (1)aces should only be added to a copy
-#     values = hand.values
-#     for card in cards:  # Ace acts as highest and lowest, so if (14)ace in hand, add a (1)ace
-#         if card.value == 14:  # ace
-#             cards.append(Card(1, 1))  # suit is irrelevant # TODO is it? Not for straight flush right?
-#             values.append(1)
-#             break   # multiple aces are irrelevant
-#
-#     values = sorted(values, reverse=True)  # check from high to low
-#     cards = sorted(cards, reverse=True)
-#     for i in range(len(cards) - 5 + 1):  # -5 to find how many you can shift, + 1 for indexing purposes
-#         continue_loop = False
-#         low_value = values[i+4]
-#         if list_diff(values[i:i+5], straight_mask(low_value)).count(0) == 5:
-#
-#             straight_cards = cards[i:i+5]
-#             flush_suit = straight_cards[0].suit
-#             for card in straight_cards:         # if a straight is found, check if all the same suit
-#                 if card.suit != flush_suit:
-#                     continue_loop = True
-#                     break  # if not all the same suit, check for other straights
-#
-#             if continue_loop:
-#                 continue
-#
-#             hand_code = 8  # straight flush
-#             for card in straight_cards:
-#                 if card.value == 14:
-#                     hand_code = 9    # royal flush
-#
-#             return [hand_code] + sorted(straight_cards, reverse=True)
-#     return False
-
 def check_straight_flush(hand):
     suits = hand.suits
     flush_suit = 0
-    for i in range(1,5):
+    for i in range(1, 5):
         if suits.count(i) >= 5:
             flush_suit = i
     if flush_suit == 0:  # no flush
@@ -170,7 +134,7 @@ def check_4oak(hand):
     return [7] + four_oak + [max(remaining)]  # 7 is hand code of 4oak
 
 
-def check_full_house(hand): # First check double pair, if yes skip pair
+def check_full_house(hand):
     highest_pair_value = find_n(3, hand.values)  # find high triple. More than triple is automatically 4oak
     triple = []
     remaining1 = []
@@ -205,7 +169,7 @@ def check_flush(hand):
     #     return False
     suits = hand.suits
     flush_suit = 0
-    for i in range(1,5):
+    for i in range(1, 5):
         if suits.count(i) >= 5:
             flush_suit = i          # can't have multiple flushes of different suits in 7 cards
 
@@ -217,77 +181,6 @@ def check_flush(hand):
             if card.suit == flush_suit:
                 flush_cards.append(card)
         return [5] + sorted(flush_cards, reverse=True)[:5]  # 5 is hand code for flush. If there are more than 5 cards of a suit, take the highest 5
-
-
-# def check_straight(hand):
-#
-#     cards = copy.copy(hand.cards)  #(1) aces should only be added to a copy
-#     multiples_removed = []
-#     values_multiples_removed = []
-#     for i in range(2,15):
-#         for c in cards:
-#             if c.value == i:
-#                 multiples_removed.append(c)
-#                 values_multiples_removed.append(c.value)
-#                 break
-#     while len(multiples_removed) < 7:
-#         multiples_removed.append(Card(0,0))
-#         values_multiples_removed.append(-1)
-#
-#     cards = multiples_removed
-#     values = values_multiples_removed
-#
-#     for card in cards: # Ace acts as highest and lowest, so if (14)ace in hand, add a (1)ace
-#         if card.value == 14:  # ace
-#             cards.append(Card(1, 1))  # suit is irrelevant
-#             values.append(1)
-#             break   # multiple aces are irrelevant
-#
-#     values = sorted(values, reverse=True)  # check from high to low
-#     cards = sorted(cards, reverse=True)
-#     for i in range(len(cards) - 4):  # -5 to find how many you can shift, + 1 for indexing purposes
-#         low_value = values[i+4]
-#         print(low_value)
-#         print(values[i:i+5])
-#         print(straight_mask(low_value))
-#         if list_diff(values[i:i+5], straight_mask(low_value)).count(0) == 5:
-#
-#             straight_cards = cards[i:i+5]
-#             return [4] + straight_cards  # 4 is hand code for straight
-#     return False
-
-
-# def check_straight(hand):
-#     cards = hand.cards
-#     if len(cards) < 5:
-#         return False
-#
-#     carddict = {card.value: card for card in cards}  # duplicates automatically removed
-#
-#     # values = []
-#     # cards_multiples_removed = []
-#     # for card in hand.cards:
-#     #     if not card.value in values:
-#     #         values.append(card.value)
-#     #         cards_multiples_removed.append(card)
-#
-#     if 14 in carddict:  # add "low ace" since ace can act as lowest and highest card in straight
-#         ace_suit = carddict[14].suit
-#         carddict[1] = Card(ace_suit, 1)
-#         # values.append(1)
-#         # cards_multiples_removed.append()
-#
-#     values = sorted(carddict.keys(), reverse=True)
-#
-#     for i in range(len(values) - 5 + 1):  # -5 to find how many you can shift, + 1 for indexing purposes
-#         low_value = values[i + 4]  # 5th card is 4 spots further than "i"
-#         # print(low_value)
-#         # print(values[i:i+5])
-#         # print(straight_mask(low_value))
-#         if list_diff(values[i:i + 5], straight_mask(low_value)).count(0) == 5:
-#             straight_cards = [carddict[v] for v in values]
-#             return [4] + straight_cards  # 4 is hand code for straight
-#     return False
 
 
 def check_straight(hand):
@@ -377,8 +270,8 @@ def check_high_card(hand):  # high card always exists, "check" for consistency
 
 def hand_value(hand):
     checks = [check_straight_flush, check_4oak, check_full_house,
-                  check_flush, check_straight, check_3oak, check_double_pair,
-                  check_pair, check_high_card]
+              check_flush, check_straight, check_3oak, check_double_pair,
+              check_pair, check_high_card]
     for check in checks:
         hv = check(hand)
         if hv:
@@ -428,7 +321,7 @@ class CardSet:
 
 class Hand(CardSet):
     handnamedict = {-1: "undetermined", 0: "High card", 1: "Pair", 2: "Two pair", 3: "Three of a kind", 4: "Straight",
-                5: "Flush", 6: "Full house", 7: "Four of a kind", 8: "Straight flush", 9: "Royal flush"}
+                    5: "Flush", 6: "Full house", 7: "Four of a kind", 8: "Straight flush", 9: "Royal flush"}
 
     def __init__(self, cards):  # TODO: keep cards as list?
         super().__init__(cards)

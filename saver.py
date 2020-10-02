@@ -1,63 +1,65 @@
 import pickle
 import cards_backend
 
-class GameState:
-    def __init__(self, channel, host, players):
-        self.id = channel.id
-        # self.playing = False
-        # self.joining = False    # TODO remove?
-        self.players = players #[Player(p,0) for p in players]  # Player attributes may be changed, but not this list
-        self.buyin = 1000
-        self.host_id = host.id
-        self.roundstate = None
-        self.sm_blind_index = 0
-        self.save()
+# TODO: the commented section below is currently copy-pasted into game_runner, due to pickle not recognizing objects
+# TODO: from other files. should be fixable by importing the object explicitly (i.e. Gamestate, not saver.Gamestate)
+# class GameState:
+#     def __init__(self, channel, host, players):
+#         self.id = channel.id
+#         # self.playing = False
+#         # self.joining = False    # TODO remove?
+#         self.players = players #[Player(p,0) for p in players]  # Player attributes may be changed, but not this list
+#         self.buyin = 1000
+#         self.host_id = host.id
+#         self.roundstate = None
+#         self.sm_blind_index = 0
+#         self.save()
+#
+#
+#     def save(self): #issue: can't pickle channel object, fixed?
+#         save_file = open("./files/savefile.dat", 'rb')
+#         save_dict = pickle.load(save_file)
+#         save_file.close()
+#
+#         save_dict[self.id] = self
+#         save_file = open("./files/savefile.dat", 'wb')
+#         pickle.dump(save_dict, save_file)
+#         save_file.close()
+#
+#     @property
+#     def n_current_players(self):
+#         return len(self.current_players)
+#
+#     @property
+#     def current_players(self):
+#         return [p for p in self.players if not p.eliminated]
+#
+#     # def new_round(self):
+#     #     self.roundstate = RoundState()
+#
+#     # bedenk welke nuttig is ^ \/
+#     def end_round(self):
+#         self.roundstate = None
+#         for p in self.players:
+#             p.prstate = None
+#
+#
+#
+#
+#
+#
+# def get_gamestate(channel):
+#     save_file = open("./files/savefile.dat", 'rb')
+#     save_dict = pickle.load(save_file)
+#     save_file.close()
+#     if channel.id in save_dict:
+#         return save_dict[channel.id]
+#     else:
+#         raise KeyError("This channel has no running games")
 
 
-    def save(self): #issue: can't pickle channel object, fixed?
-        save_file = open("./files/savefile.dat", 'rb')
-        save_dict = pickle.load(save_file)
-        save_file.close()
-
-        save_dict[self.id] = self
-        save_file = open("./files/savefile.dat", 'wb')
-        pickle.dump(save_dict, save_file)
-        save_file.close()
-
-    @property
-    def n_current_players(self):
-        return len(self.current_players)
-
-    @property
-    def current_players(self):
-        return [p for p in self.players if not p.eliminated]
-
-    # def new_round(self):
-    #     self.roundstate = RoundState()
-
-    # bedenk welke nuttig is ^ \/
-    def end_round(self):
-        self.roundstate = None
-        for p in self.players:
-            p.prstate = None
-
-
-
-
-
-
-def get_gamestate(channel):
-    save_file = open("./files/savefile.dat", 'rb')
-    save_dict = pickle.load(save_file)
-    save_file.close()
-    if channel.id in save_dict:
-        return save_dict[channel.id]
-    else:
-        raise KeyError("This channel has no running games")
-
-
-def channel_occupied(channel):
-    pass
+# def channel_occupied(channel):
+#     pass
 
 
 class RoundState: # TODO: make some of these private/local to init. Will poker() pass sm_blind player or index?
@@ -84,7 +86,6 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
                 print('new cycle')
                 self.new_cycle_flag = True
                 # self.cycle_number += 1
-
 
             print("    ", self.turn_player.name)
             print("        folded:", self.turn_player.prstate.folded)
@@ -126,7 +127,7 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
 
     def reveal_cards(self, n):
         open_cards = self.community_cards[:n]
-        self.public_cards = cards_backend.CardSet(open_cards + (5-n)*[cards_backend.Card(0,0)])
+        self.public_cards = cards_backend.CardSet(open_cards + (5-n)*[cards_backend.Card(0, 0)])
 
     async def send_community_cards(self, channel):
         await self.public_cards.send_to(channel)
