@@ -14,8 +14,9 @@ if __name__ == '__main__':
 
 def small_blind_bet(roundnr):
     n = 20*2.5**roundnr
-    oom = int(math.log(n,10))
+    oom = int(math.log(n, 10))
     return round(n/10**oom)*10**oom
+
 
 def partioner(amount, partition):
     output = []
@@ -34,6 +35,7 @@ def partioner(amount, partition):
             output.append(i)
             amount -= i
 
+    # processing remaining amount of money above highest partition
     if out_of_money:
         output.append(0)
     else:
@@ -50,7 +52,7 @@ class GameState:
         self.id = channel.id
         # self.playing = False
         # self.joining = False    # TODO remove?
-        self.players = players #[Player(p,0) for p in players]  # Player attributes may be changed, but not this list
+        self.players = players  # [Player(p,0) for p in players]  # Player attributes may be changed, but not this list
         self.buyin = 1000
         self.host_id = host.id
         self.roundstate = None
@@ -59,8 +61,7 @@ class GameState:
         self.in_round = False
         self.save()
 
-
-    def save(self): #issue: can't pickle channel object, fixed?
+    def save(self):  # issue: can't pickle channel object, fixed?
         with open("./files/savefile.dat", 'rb') as save_file:
             save_dict = pickle.load(save_file)
 
@@ -77,7 +78,6 @@ class GameState:
 
         with open("./files/savefile.dat", 'wb') as save_file:
             pickle.dump(save_dict, save_file)
-
 
     @property
     def n_current_players(self):
@@ -98,6 +98,7 @@ class GameState:
         for p in self.players:
             p.prstate = None
 
+
 def channel_occupied(channel):
     save_file = open("./files/savefile.dat", 'rb')
     save_dict = pickle.load(save_file)
@@ -105,10 +106,6 @@ def channel_occupied(channel):
     return channel.id in save_dict
 
 # -------------------------------------------------------------------------------------------------------------------- #
-
-
-
-
 
 
 class PRState:          # PlayerRoundState: stores all round-specific player data
@@ -171,91 +168,105 @@ class Player:
         await cards.send_to(channel)
 
 
-
+def nameprint(iterable):
+    print([p.name for p in iterable])
 
 
 async def lobby(host, channel):     # joining process and starting game
     await channel.send("The lobby is now open! The host can add players by typing \"!add\" and tagging members in " 
-                        "the same message, or you can join yourself with \"!join\" if this is enabled. "
-                        "A maximum of 23 players can join.")
-    userlist = [host]
+                       "the same message, or you can join yourself with \"!join\" if this is enabled. "
+                       "A maximum of 23 players can join.")
+    user_set = {host}
+
+
     def check(msg):
         cmd = msg.content.split()[0]
-        return cmd in ['!join', '!start', '!add','!remove','!quit','!botadd']
+        return cmd in ['!join', '!start', '!add', '!remove', '!leave', '!botadd']
 
     while True:
+        print("User set:")
+        nameprint(user_set)
         msg = await interface.wait_for_msg(channel, check=check)
         cmd, *args = [s.lower() for s in msg.content[1:].split()]
         if cmd == 'join' and not msg.author.bot:
-            userlist.append(msg.author)
+            user_set.add(msg.author)
             await channel.send("Welcome, {}".format(msg.author.name))
 
         elif cmd == 'add' and msg.author == host:
             if '@everyone' in args:
-                addlist = [u for u in msg.channel.members if not u.bot]  # msg.channel.members
-
-
-            elif '@here' in args:
-                addlist = [member for member in msg.channel.members if str(member.status) == "online"] + msg.mentions
-                addlist = list(set([u for u in addlist if not u.bot])) #list(set(addlist))
+                add_set = {u for u in channel.members if not u.bot}  # msg.channel.members
 
             else:
-                addlist = msg.mentions
+                add_set = set()
+                if '@here' in args:
+                    people = [member for member in channel.members if str(member.status) == "online"]
+                    add_set = add_set.union({u for u in people if not u.bot})
 
-            userlist += addlist
-            await channel.send("Welcome {}".format(', '.join([member.name for member in addlist])))
+                for role in msg.role_mentions:
+                    print("role members:")
+                    nameprint(role.members)
+                    role_members_in_channel = set(role.members).intersection(set(channel.members))
+                    print("of which in channel")
+                    nameprint(role_members_in_channel)
+                    add_set = add_set.union(role_members_in_channel)
 
-        elif cmd == 'remove' and msg.author == host:
+                add_set = add_set.union(set(msg.mentions))
+                if len(add_set) == 0:
+                    await channel.send("To use !add, tag at least one person, role, @ here or @ everyone"
+                                       " in the same message")
+                    continue
+
+            print("Add_set")
+            nameprint(add_set)
+
+            user_set = user_set.union(add_set)
+            await channel.send("Welcome {}".format(', '.join([member.name for member in add_set])))
+
+        elif cmd == 'remove' and msg.author == host:  # TODO: make into same structure as add
             if '@everyone' in args:
-                userlist = [host]
+                user_set = {host}
                 await channel.send("Removed everybody (except the host)")
             else:
                 if '@here' in args:
-                    removelist = [member for member in msg.channel.members if str(member.status) == "online"] + \
-                                 msg.mentions
-                    removelist = list(set(removelist))
+                    remove_set = {member for member in channel.members if str(member.status) == "online"}.union(
+                        set(msg.mentions)
+                    )
                 else:
-                    removelist = msg.mentions
-                id_removelist = [member.id for member in removelist]
-                for user in userlist:
-                    if user.id in id_removelist and user != host:
-                        userlist.remove(user)
-                if len(removelist) == 0:
+                    remove_set = set(msg.mentions)
+                print("Remove set:")
+                nameprint(remove_set)
+                user_set = user_set.difference(remove_set)
+                if len(remove_set) == 0:
                     await channel.send("Nobody was removed")
-                await channel.send("Removed {}".format(', '.join([member.name for member in removelist])))
+                else:
+                    await channel.send("Removed {}".format(', '.join([member.name for member in remove_set])))
 
-        elif cmd == 'quit':
-            userlist.remove(msg.author)
-            await channel.send("{} quit".format(msg.author.name))
+        elif cmd == 'leave':
+            user_set.discard(msg.author)
+            await channel.send("{} left".format(msg.author.name))
 
         elif cmd == 'start':
             if msg.author == host:
-                userlist = list(set(userlist))
-                if len(userlist) > 23:
+                if len(user_set) > 23:
                     await channel.send('There are currently {} players while the maximum is 23. \n'
-                                 'Please remove at least {} players'.format(len(userlist), len(userlist)-23))
+                                       'Please remove at least {} players'.format(len(user_set), len(user_set)-23))
                 else:
                     await channel.send('Joining has closed. \n'
-                                       'Starting the game with {}'.format(', '.join([m.name for m in userlist])))
+                                       'Starting the game with {}'.format(', '.join([m.name for m in user_set])))
                     break
 
         elif cmd == 'botadd':
-            addlist = [u for u in msg.channel.members if u.name != 'PokerBot']
-            userlist += addlist
-            await channel.send("Welcome {}".format(', '.join([member.name for member in addlist])))
+            add_set = {u for u in channel.members if u.name != 'PokerBot'}
+            user_set = user_set.union(add_set)
+            await channel.send("Welcome {}".format(', '.join([member.name for member in add_set])))
 
-
-    userlist += [host]  # just in case
-    userlist = list(set(userlist))
-    # userlist = [u for u in userlist if not u.bot]  # just in case
-    # userlist = [u for u in userlist if not u.bot]  # just in case
-
-
-    return userlist
+    user_set.add(host)  # just in case
+    # return list(user_set)  # bot unsafe, for testing
+    return [u for u in user_set if not u.bot]
 
 
 async def new_game(host, channel):
-    print('channel id:',channel.id)
+    print('channel id:', channel.id)
     if channel_occupied(channel):
         await channel.send("There is an active game in this channel. Do you want to end it and start a new one?")
         yesnodict = {"✅": 'yes', "❌": 'no'}
@@ -294,8 +305,6 @@ async def single_round_game(host, channel):
     gamestate = saver.GameState(channel, host, playerlist)
     gamestate.save()
     await poker_round(channel)
-
-
 
 
 async def poker_round(channel):
@@ -341,13 +350,12 @@ async def poker_round(channel):
         if len(roundstate.non_folded_players()) == 1:  # all but 1 folded => win by default
             break
 
-
         if roundstate.new_cycle_flag:
             if roundstate.n_active_players() == 1:
                 break
             roundstate.cycle_number += 1
             if roundstate.cycle_number <= 3:
-                n = [0,3,4,5][roundstate.cycle_number]
+                n = [0, 3, 4, 5][roundstate.cycle_number]
                 roundstate.reveal_cards(n)
                 await roundstate.send_community_cards(channel)
                 roundstate.new_cycle_flag = False
@@ -362,18 +370,13 @@ async def poker_round(channel):
         elif roundstate.turn_number == 2:
             roundstate = await blind_turn(roundstate, channel, 2, gamestate.roundnumber)
 
-
-
         else:
             if roundstate.turn_number == 3:  # exception for small and big blind: allowed to raise on blinds edit
                 roundstate.previous_raiser = roundstate.turn_player
             roundstate = await turn(roundstate, channel)  # execute turn and update roundstate
 
-
-
         roundstate.next_player()
         # if roundstate.new_cycle_flag:
-
 
         gamestate.roundstate = roundstate
         gamestate.save()
@@ -386,7 +389,7 @@ async def poker_round(channel):
         # want to show hand)
         p.prstate.hand = (roundstate.community_cards + p.prstate.hole_cards).to_hand()
 
-    sorted_playerlist = sorted(roundstate.non_folded_players(), key=lambda p: p.prstate.hand, reverse=True)
+    sorted_playerlist = sorted(roundstate.non_folded_players(), key=lambda x: x.prstate.hand, reverse=True)
 
     winners = [sorted_playerlist[0]]
     for p in sorted_playerlist[1:]:  # adds all draw winners to winners list
@@ -409,7 +412,7 @@ async def poker_round(channel):
         await winners[0].display_hand(channel, show_name=False)
 
     competing_losers = [m for m in roundstate.non_folded_players() if m not in winners]
-    competing_losers.sort(key=lambda p: p.prstate.hand)
+    competing_losers.sort(key=lambda x: x.prstate.hand)
     if len(competing_losers) != 0:
         await channel.send("These are the hands of the losing players who didn't fold:")
     for cl in competing_losers:
@@ -418,13 +421,13 @@ async def poker_round(channel):
     folded = roundstate.folded_players()
     if len(folded) != 0:
         timeout = 15
-        yeslist = await interface.button("Players who folded can show their hand by pressing the button below this message in the"
-                               " next {} seconds".format(timeout), folded, channel, timeout)
+        yeslist = await interface.button("Players who folded can show their hand by pressing the button below"
+                                         " this message in the next {} seconds".format(timeout), folded, channel,
+                                         timeout)
         for p in yeslist:
             await p.display_hand(channel)
 
-
-    ### POT DIVISION ##
+    # POT DIVISION #
     roundstate.sidepots = sorted(list(set(roundstate.sidepots)))
     pot = np.zeros(len(roundstate.sidepots) + 1, dtype=int)
     for p in roundstate.current_players:    # calculates amounts in sidepots
@@ -513,8 +516,6 @@ async def turn(roundstate, channel):
         if player.money >= roundstate.min_bet - player.prstate.invested + roundstate.min_raise:  # TODO: changed...
             current_options.append('raise')
 
-
-
     # show players game status
     statusupdate = ['Game status:']
     folded = roundstate.folded_players()
@@ -536,12 +537,8 @@ async def turn(roundstate, channel):
     await channel.send("{}, it's your turn. You have ${}, and you have bet ${} so far".format(player.mention(), player.money, player.prstate.invested))
     total_options_dict = {"✅": 'check', "🛑": 'fold', "💯": 'all-in', "🆙": 'raise', "☎️": 'call'}
 
-
-
-
-    inv = {y: x for x,y in total_options_dict.items()}
+    inv = {y: x for x, y in total_options_dict.items()}
     current_option_dict = {inv[s]: s for s in current_options}
-
 
     move = await interface.reaction_menu(current_option_dict, player, channel)
     if move == 'check':
@@ -583,9 +580,8 @@ async def turn(roundstate, channel):
                     await channel.send("Blaze it")
                 break
 
-
-        player.money -= roundstate.min_bet - player.prstate.invested + raise_amount  # edit
-        player.prstate.invested = roundstate.min_bet + raise_amount # edit
+        player.money -= roundstate.min_bet - player.prstate.invested + raise_amount
+        player.prstate.invested = roundstate.min_bet + raise_amount
         roundstate.min_bet += raise_amount
         roundstate.min_raise = raise_amount
         roundstate.previous_raiser = player
@@ -617,7 +613,7 @@ async def turn(roundstate, channel):
         if bet > roundstate.min_bet:  # all-in behaves like raise
             print("all-in went to raise")
             roundstate.previous_raiser = player
-            roundstate.min_bet = player.prstate.invested #  += bet   # TODO is dit zo? += of = ... changed
+            roundstate.min_bet = player.prstate.invested  # += bet   # TODO is dit zo? += of = ... changed
             if raise_amount > roundstate.min_raise:  # if all-in raise exceeds minimum raise, minimum raise is adjusted
                 roundstate.min_raise = raise_amount
 
@@ -644,7 +640,7 @@ async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rul
     # size: 1=small, 2 = big
     player = roundstate.turn_player
     # if size == 2:
-    #     roundstate.previous_raiser = roundstate.current_players[(roundstate.player_index + 1)%roundstate.n]  # TODO: moet dit?
+    # roundstate.previous_raiser = roundstate.current_players[(roundstate.player_index + 1)%roundstate.n]  # TODO: moet dit?
     await channel.send("{}, you're the {} blind ".format(player.mention(), ['small', 'big'][size-1]))
 
     blind_amounts = [0, 10 + 5*roundnumber, 20 + 10*roundnumber]  # hardcoded for now, TODO: changeable in settings
@@ -658,7 +654,7 @@ async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rul
         roundstate.sidepots.append(player.prstate.invested)
         await channel.send("You were forced to go all-in.\n"
                            "The current bet is ${} and the minimum raise is ${}".format(roundstate.min_bet,
-                                                                                      roundstate.min_raise))
+                                                                                        roundstate.min_raise))
 
     else:
         player.money -= amount
