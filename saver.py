@@ -48,14 +48,14 @@ import cards_backend
 #
 #
 #
-# def get_gamestate(channel):
-#     save_file = open("./files/savefile.dat", 'rb')
-#     save_dict = pickle.load(save_file)
-#     save_file.close()
-#     if channel.id in save_dict:
-#         return save_dict[channel.id]
-#     else:
-#         raise KeyError("This channel has no running games")
+def get_gamestate(channel):
+    save_file = open("./files/savefile.dat", 'rb')
+    save_dict = pickle.load(save_file)
+    save_file.close()
+    if channel.id in save_dict:
+        return save_dict[channel.id]
+    else:
+        raise KeyError("This channel has no running games")
 
 
 # def channel_occupied(channel):
