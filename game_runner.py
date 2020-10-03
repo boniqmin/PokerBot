@@ -594,15 +594,20 @@ async def turn(roundstate, channel):
 
     move = await interface.reaction_menu_replyv(current_option_dict, player, sent_message)
     if move == 'check':
-        await channel.send("{} checked.".format(player.name, roundstate.min_bet))
+        # await channel.send("{} checked.".format(player.name))
+        post_turn_embed = discord.Embed(title="{} checked".format(player.name), colour=discord.Colour.green())
 
-    if move == 'call':
-        await channel.send("{} called.".format(player.name, roundstate.min_bet))
+    elif move == 'call':
+        #await channel.send("{} called.".format(player.name, roundstate.min_bet))
+        post_turn_embed = discord.Embed(title="{} called".format(player.name, roundstate.min_bet),
+                                               colour=discord.Colour.teal())
         player.money -= roundstate.min_bet - player.prstate.invested  # edit
         player.prstate.invested = roundstate.min_bet  # edit
 
     elif move == 'fold':
-        await channel.send("{} folded.".format(player.name))
+        #await channel.send("{} folded.".format(player.name))
+        post_turn_embed = discord.Embed(title="{} folded".format(player.name),
+                                               colour=discord.Colour.red())
         player.prstate.folded = True
 
     elif move == 'raise':
@@ -641,9 +646,13 @@ async def turn(roundstate, channel):
         if player.money == 0:  # if player raises all his money, he goes all-in
             player.prstate.all_in = True
             roundstate.sidepots.append(player.prstate.invested)
-            await channel.send("{} went all-in.".format(player.name))
+            # await channel.send("{} went all-in.".format(player.name))
+            post_turn_embed = discord.Embed(title="{} went all-in".format(player.name),
+                                                   colour=discord.Colour.orange())
         else:
-            await channel.send("{} raised ${}.".format(player.name, raise_amount))
+            # await channel.send("{} raised ${}.".format(player.name, raise_amount))
+            post_turn_embed = discord.Embed(title="{} raised ${}".format(player.name, raise_amount),
+                                                   colour=discord.Colour.blue())
 
     elif move == 'all-in':
         await channel.send("Are you sure you want to go all-in?")
@@ -672,16 +681,26 @@ async def turn(roundstate, channel):
         else:  # like check
             pass  # nothing special happens, really. Might later though.
 
-        await channel.send("{} went all-in.".format(player.name))
+        # await channel.send("{} went all-in.".format(player.name))
+        post_turn_embed = discord.Embed(title="{} went all-in".format(player.name),
+                                               colour=discord.Colour.orange())
+
+    else:
+        print("Move not registered")
+        post_turn_embed = discord.Embed(title="Move not registered.")
 
     # await channel.send(f"{player.name} {activitystring}. The current bet is {roundstate.min_bet}.")
     # ^ probably do different message for each move (to specify bet, raise etc)
     print(player is roundstate.turn_player)
     if move != 'all-in' and move != 'fold':
-        await channel.send("You have ${} left.".format(player.money))
-    await channel.send("---")
+        # await channel.send("You have ${} left.".format(player.money))
+        post_turn_embed.description = "You have ${} left".format(player.money)
 
-    total_money = sum(p.money for p in roundstate.current_players) + sum(p.prstate.invested for p in roundstate.current_players)
+    await channel.send(embed=post_turn_embed)
+
+    total_money = sum(p.money for p in roundstate.current_players) + \
+                  sum(p.prstate.invested for p in roundstate.current_players)
+
     print('total money:  $', total_money)
     # if total_money != 3000:
     #     await channel.send("money was lost")
