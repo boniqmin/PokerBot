@@ -7,6 +7,7 @@ import discord
 import pickle
 from random import randint
 
+testing = True  # This allows bots to join. Bots don't always appear in message.mentions, but can added by role
 
 if __name__ == '__main__':
     interface.run()
@@ -43,6 +44,13 @@ def partioner(amount, partition):
 
     return output
 
+
+def get_dominant_color(pil_img):
+    img = pil_img.copy()
+    img.convert("RGB")
+    img.resize((1, 1), resample=0)
+    dominant_color = img.getpixel((0, 0))
+    return dominant_color
 
 # -------------------------------------------------------------------------------------------------------------------- #
 
@@ -173,11 +181,18 @@ def nameprint(iterable):
 
 
 async def lobby(host, channel):     # joining process and starting game
-    await channel.send("The lobby is now open! The host can add players by typing \"!add\" and tagging members in " 
-                       "the same message, or you can join yourself with \"!join\" if this is enabled. "
-                       "A maximum of 23 players can join.")
-    user_set = {host}
+    # await channel.send("The lobby is now open! The host can add players by typing \"!add\" and tagging members in "
+    #                    "the same message, or you can join yourself with \"!join\" if this is enabled. "
+    #                    "A maximum of 23 players can join.")
+    description = "The host can add players by typing \"!add\" and tagging members in" \
+                  " the same message, or you can join yourself with \"!join\" if this is enabled. " \
+                  "A maximum of 23 players can join."
+    lobby_message_embed = discord.Embed(title="The lobby is now open!", description=description,
+                                        colour=discord.Colour.green())
+    await channel.send(embed=lobby_message_embed)
 
+    user_set = {host}
+    user_list = []
 
     def check(msg):
         cmd = msg.content.split()[0]
@@ -246,10 +261,19 @@ async def lobby(host, channel):     # joining process and starting game
             await channel.send("{} left".format(msg.author.name))
 
         elif cmd == 'start':
+            user_set.add(host)  # just in case
+            if testing:
+                user_list = list(user_set)  # bot unsafe, for testing
+            else:
+                user_list = [u for u in user_set if not u.bot]
+
             if msg.author == host:
-                if len(user_set) > 23:
+
+                if len(user_list) > 23:
                     await channel.send('There are currently {} players while the maximum is 23. \n'
                                        'Please remove at least {} players'.format(len(user_set), len(user_set)-23))
+                elif len(user_list) < 2:
+                    await channel.send("You need at least 2 players to start the game")
                 else:
                     await channel.send('Joining has closed. \n'
                                        'Starting the game with {}'.format(', '.join([m.name for m in user_set])))
@@ -260,9 +284,7 @@ async def lobby(host, channel):     # joining process and starting game
             user_set = user_set.union(add_set)
             await channel.send("Welcome {}".format(', '.join([member.name for member in add_set])))
 
-    user_set.add(host)  # just in case
-    # return list(user_set)  # bot unsafe, for testing
-    return [u for u in user_set if not u.bot]
+    return user_list
 
 
 async def new_game(host, channel):
@@ -518,33 +540,59 @@ async def turn(roundstate, channel):
 
     # show players game status
     status_embed = discord.Embed(title="Game status")
-    statusupdate = []
     folded = roundstate.folded_players()
     if len(folded) != 0:
-        statusupdate.append(" - Folded: {}".format(', '.join([p.name for p in folded])))
+        status_embed.add_field(name="Folded", value=', '.join([p.name for p in folded]), inline=False)
 
     all_in_p = roundstate.all_in_players()
     if len(all_in_p) != 0:
-        statusupdate.append(" - All-in: {}".format(', '.join([p.name + " (at $" + str(p.prstate.invested) + ")" for p in all_in_p])))
+        status_embed.add_field(name="All-in",
+                               value=', '.join([p.name + " (at $" + str(p.prstate.invested) + ")" for p in all_in_p]),
+                               inline=False)
 
     active_p = roundstate.active_players()
     if len(active_p) != 0:
-        statusupdate.append(" - Active players: {}".format(', '.join([p.name + " ($" + str(p.money) + ")" for p in active_p])))
+        status_embed.add_field(name="Active players",
+                               value=', '.join([p.name + " ($" + str(p.money) + ")" for p in active_p]), inline=False)
 
-    statusupdate.append("The current bet: ${}, minimum raise: ${}".format(roundstate.min_bet, roundstate.min_raise))
-    statusupdate.append("Pot: ${}".format(roundstate.pot_amount()))
-    status_embed.description = '\n'.join(statusupdate)
-    status_embed.set_footer(text=player.name, icon_url=player.object().avatar_url)
-    await channel.send(embed=status_embed)
+    status_embed.add_field(name="Bet", value='$'+str(roundstate.min_bet))
+    status_embed.add_field(name="Minimum raise", value='$'+str(roundstate.min_raise))
+    status_embed.add_field(name="Pot", value='$'+str(roundstate.pot_amount()))
+    # status_embed.set_footer(text=player.name, icon_url=player.object().avatar_url)
+
+    await channel.send(embed=status_embed)  # send status update in chat
 
     print('initiated {}\'s turn'.format(player.name))
-    await channel.send("{}, it's your turn. You have ${}, and you have bet ${} so far".format(player.mention(), player.money, player.prstate.invested))
+
+    # try:  # try to make the embed a representative color for the player
+    #     player_avatar = await (player.object().avatar_url_as(format='png')).read()
+    #     avatar_dominant_color = discord.Colour(*get_dominant_color(player_avatar))
+    # except ValueError:
+    #     avatar_dominant_color = discord.Colour.purple()
+    turn_embed = discord.Embed(title="{}, it's your turn".format(player.name),
+                               colour=discord.Colour.gold())
+    turn_embed.add_field(name="Money", value='$'+str(player.money))
+    turn_embed.add_field(name="Your bet", value='$'+str(player.prstate.invested))
     total_options_dict = {"✅": 'check', "🛑": 'fold', "💯": 'all-in', "🆙": 'raise', "☎️": 'call'}
-
     inv = {y: x for x, y in total_options_dict.items()}
-    current_option_dict = {inv[s]: s for s in current_options}
+    current_option_dict = {inv[s]: s for s in current_options}  # selects applicable options
 
-    move = await interface.reaction_menu(current_option_dict, player, channel)
+    formatted_move_name_dict = {'check': 'Check ', 'fold': 'Fold   ',
+                            'all-in': 'All-in', 'call': '   Call   ', 'raise': 'Raise'}
+    formatted_emoji_dict = {'check': "[✅]", 'fold': "[🛑]", 'all-in': "[💯]", 'call': "[☎]", 'raise': "[🆙]"}
+
+    your_move_names = []
+    your_emojis = []
+    for emoji, move_name in current_option_dict.items():
+        your_move_names.append(formatted_move_name_dict[move_name])
+        your_emojis.append(formatted_emoji_dict[move_name])
+        # turn_embed.add_field(name=move_name, value=emoji)
+
+    turn_embed.add_field(name='   '.join(your_move_names), value=' -- '.join(your_emojis), inline=False)
+
+    sent_message = await channel.send(player.mention(), embed=turn_embed)
+
+    move = await interface.reaction_menu_replyv(current_option_dict, player, sent_message)
     if move == 'check':
         await channel.send("{} checked.".format(player.name, roundstate.min_bet))
 
@@ -643,9 +691,11 @@ async def turn(roundstate, channel):
 async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rules. For now, bet or all-in automatically.
     # size: 1=small, 2 = big
     player = roundstate.turn_player
+
     # if size == 2:
     # roundstate.previous_raiser = roundstate.current_players[(roundstate.player_index + 1)%roundstate.n]  # TODO: moet dit?
-    await channel.send("{}, you're the {} blind ".format(player.mention(), ['small', 'big'][size-1]))
+    # await channel.send("{}, you're the {} blind ".format(player.mention(), ['small', 'big'][size-1]))
+    title = "{}, you're the {} blind ".format(player.name, ['small', 'big'][size-1])
 
     blind_amounts = [0, 10 + 5*roundnumber, 20 + 10*roundnumber]  # hardcoded for now, TODO: changeable in settings
     amount = blind_amounts[size]
@@ -656,9 +706,12 @@ async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rul
         player.money = 0
         player.prstate.all_in = True
         roundstate.sidepots.append(player.prstate.invested)
-        await channel.send("You were forced to go all-in.\n"
-                           "The current bet is ${} and the minimum raise is ${}".format(roundstate.min_bet,
-                                                                                        roundstate.min_raise))
+        # await channel.send("You were forced to go all-in.\n"
+        #                    "The current bet is ${} and the minimum raise is ${}".format(roundstate.min_bet,
+        #                                                                               roundstate.min_raise))
+        description = "You were forced to go all-in.\n" \
+                      "The current bet is ${} and the minimum raise is ${}".format(roundstate.min_bet,
+                                                                                      roundstate.min_raise)
 
     else:
         player.money -= amount
@@ -667,7 +720,9 @@ async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rul
         print(player.money)
         player.prstate.invested = amount
 
-        await channel.send("You bet ${} . You have ${} left.".format(amount, player.money))
-
-    await channel.send("---")
+        # await channel.send("You bet ${} . You have ${} left.".format(amount, player.money))
+        description = "You bet ${} . You have ${} left.".format(amount, player.money)
+    # await channel.send("---")
+    blind_embed = discord.Embed(title=title, description=description, colour=discord.Colour.lighter_grey())
+    await channel.send(player.mention(), embed=blind_embed)
     return roundstate
