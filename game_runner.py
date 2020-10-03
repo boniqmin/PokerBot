@@ -517,7 +517,8 @@ async def turn(roundstate, channel):
             current_options.append('raise')
 
     # show players game status
-    statusupdate = ['Game status:']
+    status_embed = discord.Embed(title="Game status")
+    statusupdate = []
     folded = roundstate.folded_players()
     if len(folded) != 0:
         statusupdate.append(" - Folded: {}".format(', '.join([p.name for p in folded])))
@@ -532,7 +533,10 @@ async def turn(roundstate, channel):
 
     statusupdate.append("The current bet: ${}, minimum raise: ${}".format(roundstate.min_bet, roundstate.min_raise))
     statusupdate.append("Pot: ${}".format(roundstate.pot_amount()))
-    await channel.send('```' + '\n'.join(statusupdate) + '```')
+    status_embed.description = '\n'.join(statusupdate)
+    status_embed.set_footer(text=player.name, icon_url=player.object().avatar_url)
+    await channel.send(embed=status_embed)
+
     print('initiated {}\'s turn'.format(player.name))
     await channel.send("{}, it's your turn. You have ${}, and you have bet ${} so far".format(player.mention(), player.money, player.prstate.invested))
     total_options_dict = {"✅": 'check', "🛑": 'fold', "💯": 'all-in', "🆙": 'raise', "☎️": 'call'}
