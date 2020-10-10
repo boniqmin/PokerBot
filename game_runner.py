@@ -683,7 +683,7 @@ async def turn(roundstate, channel):
 
         # await channel.send("{} went all-in.".format(player.name))
         post_turn_embed = discord.Embed(title="{} went all-in".format(player.name),
-                                               colour=discord.Colour.orange())
+                                        colour=discord.Colour.orange())
 
     else:
         print("Move not registered")
@@ -707,13 +707,10 @@ async def turn(roundstate, channel):
     return roundstate
 
 
-async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rules. For now, bet or all-in automatically.
+async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rules. For now, bet or all-in automatically
     # size: 1=small, 2 = big
     player = roundstate.turn_player
 
-    # if size == 2:
-    # roundstate.previous_raiser = roundstate.current_players[(roundstate.player_index + 1)%roundstate.n]  # TODO: moet dit?
-    # await channel.send("{}, you're the {} blind ".format(player.mention(), ['small', 'big'][size-1]))
     title = "{}, you're the {} blind ".format(player.name, ['small', 'big'][size-1])
 
     blind_amounts = [0, 10 + 5*roundnumber, 20 + 10*roundnumber]  # hardcoded for now, TODO: changeable in settings
@@ -730,7 +727,7 @@ async def blind_turn(roundstate, channel, size, roundnumber):  # TODO: check rul
         #                                                                               roundstate.min_raise))
         description = "You were forced to go all-in.\n" \
                       "The current bet is ${} and the minimum raise is ${}".format(roundstate.min_bet,
-                                                                                      roundstate.min_raise)
+                                                                                   roundstate.min_raise)
 
     else:
         player.money -= amount
