@@ -7,7 +7,7 @@ import discord
 import time
 
 
-def merge_images(filenames):
+def merge_images(filenames, formatting):
     images = [Image.open(filename) for filename in filenames]
     widths, heights = [], []
     for image in images:
@@ -22,6 +22,9 @@ def merge_images(filenames):
     for i in range(len(widths)):
         result.paste(im=images[i], box=(sum(widths[:i]), 0))
 
+    if 'scale' in formatting:
+        scale = formatting['scale']
+        result = result.resize((int(result.height*scale), int(result.width*scale)), Image.ANTIALIAS)
     return result
 
 
@@ -31,6 +34,7 @@ class Card:
                  11: 'Jack', 12: 'Queen', 13: 'King', 14: 'Ace'}  # default ace is 14, 1 is only in straights
 
     suitabr = {0: None, 1: 'D', 2: 'C', 3: 'H', 4: 'S'}
+    suitemoji = {1: '♥️', 2: '♣', 3: '♦️', 4: '♠️'}
     valueabr = {0: 'back', 1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10',
                 11: 'J', 12: 'Q', 13: 'K', 14: 'A'}  # low ace is now redundant
 
@@ -64,6 +68,11 @@ class Card:
         if self.suit == 0:
             return 'back'
         return Card.valueabr[self.value] + Card.suitabr[self.suit]
+
+    def emojiprint(self):
+        if self.suit == 0:
+            return ''
+        return Card.suitemoji[self.suit] + Card.valueabr[self.value]
 
     def __repr__(self):
         return str(self)
@@ -284,12 +293,23 @@ class CardSet:
     def __init__(self, cards):
         self.cards = cards
 
-    async def send_to(self, channel):
+    async def save_image_to(self, path, formatting=None):
+        if formatting is None:
+            formatting = {}
         filenames = [card.filename for card in self.cards]
-        image = merge_images(filenames)
-        path = "./files/CardImgBuffer.png"
+        image = merge_images(filenames, formatting)
         image.save(path)
-        await channel.send(file=discord.File(path))
+
+    async def send_to(self, channel, caption=None, color=discord.Colour.from_rgb(254, 254, 254)):
+        path = "./files/CardImgBuffer.png"
+        await self.save_image_to(path)
+        if caption is not None:
+            caption = ''
+        cards_embed = discord.Embed(title=caption, color=color)
+        cardset_image = discord.File("./files/CardImgBuffer.png", "cardset.png")
+        cards_embed.set_image(url="attachment://cardset.png")
+
+        await channel.send(file=cardset_image, embed=cards_embed)
 
     # def show(self):  # test function
     #     handimg = merge_images(self.filenames())

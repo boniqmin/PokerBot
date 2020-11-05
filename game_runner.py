@@ -8,6 +8,7 @@ import pickle
 from random import randint
 
 testing = True  # This allows bots to join. Bots don't always appear in message.mentions, but can added by role
+# sike, not anymore. You have to make them say !join
 
 if __name__ == '__main__':
     interface.run()
@@ -20,6 +21,7 @@ def small_blind_bet(roundnr):
 
 
 def partioner(amount, partition):
+    # divides money in bins according to all-in bets, essentially like tax brackets
     output = []
     partition = [0] + partition
     intervals = [partition[i+1] - partition[i] for i in range(len(partition)-1)]
@@ -176,8 +178,8 @@ class Player:
         await cards.send_to(channel)
 
 
-def nameprint(iterable):
-    print([p.name for p in iterable])
+def nameprint(player_list):
+    print([p.name for p in player_list])
 
 
 async def lobby(host, channel):     # joining process and starting game
@@ -199,23 +201,26 @@ async def lobby(host, channel):     # joining process and starting game
         return cmd in ['!join', '!start', '!add', '!remove', '!leave', '!botadd']
 
     while True:
+        def bot(user):
+            return user.bot and not testing
+
         print("User set:")
         nameprint(user_set)
         msg = await interface.wait_for_msg(channel, check=check)
         cmd, *args = [s.lower() for s in msg.content[1:].split()]
-        if cmd == 'join' and not msg.author.bot:
+        if cmd == 'join':  # and not msg.author.bot:
             user_set.add(msg.author)
             await channel.send("Welcome, {}".format(msg.author.name))
 
         elif cmd == 'add' and msg.author == host:
             if '@everyone' in args:
-                add_set = {u for u in channel.members if not u.bot}  # msg.channel.members
+                add_set = {u for u in channel.members if not bot(u)}  # msg.channel.members
 
             else:
                 add_set = set()
                 if '@here' in args:
                     people = [member for member in channel.members if str(member.status) == "online"]
-                    add_set = add_set.union({u for u in people if not u.bot})
+                    add_set = add_set.union({u for u in people if not bot(u)})
 
                 for role in msg.role_mentions:
                     print("role members:")
@@ -262,10 +267,11 @@ async def lobby(host, channel):     # joining process and starting game
 
         elif cmd == 'start':
             user_set.add(host)  # just in case
-            if testing:
-                user_list = list(user_set)  # bot unsafe, for testing
-            else:
-                user_list = [u for u in user_set if not u.bot]
+            # if testing:
+            #     user_list = list(user_set)  # bot unsafe, for testing
+            # else:
+            #     user_list = [u for u in user_set if not u.bot]
+            user_list = [u for u in user_set if not bot(u)]
 
             if msg.author == host:
 
@@ -313,6 +319,20 @@ async def new_game(host, channel):
     await game(channel)
 
 
+
+# place somewhere else probably
+
+
+
+async def settings(host, channel, default_settings):
+    default_settings = {'moderator': [host]}
+    mod_embed = discord.Embed(title="Change who has moderator rights",
+                              description="Default is just the host. ")
+    mod_embed.add_field(name="Tag people    Everybody", value="👨‍👩‍👦‍👦")
+
+
+
+
 async def jumpstart(channel):
     await game(channel)
 
@@ -357,16 +377,8 @@ async def poker_round(channel):
         gamestate.roundstate = saver.RoundState(current_players, sm_blind_index, community_cards)
         gamestate.save()
 
-        if gamestate.roundnumber == 1:
-            newroundstring = "***Let\'s begin!***"
-        else:
-            newroundstring = " ***New round!***"
-
-        newround_embed = discord.Embed(title=newroundstring, color=discord.Colour.green())
-        await channel.send(embed=newround_embed)
-
     roundstate = gamestate.roundstate
-    await roundstate.send_community_cards(channel)
+    # await roundstate.send_community_cards(channel)
 
     print("Previous raiser is {}".format(roundstate.previous_raiser))
     print("Turn player is {}".format(roundstate.turn_player))
@@ -383,13 +395,25 @@ async def poker_round(channel):
                 break
             roundstate.cycle_number += 1
             if roundstate.cycle_number <= 3:
-                n = [0, 3, 4, 5][roundstate.cycle_number]
+                n = [0, 3, 4, 5][roundstate.cycle_number - 1]
                 roundstate.reveal_cards(n)
-                await roundstate.send_community_cards(channel)
+                caption = ''
+                if n == 0:
+                    if gamestate.roundnumber == 1:
+                        caption = "*Let\'s begin!*"
+                    else:
+                        caption = "*New round!*"
+                elif n == 3:
+                    caption = "Flop!"
+                elif n == 4:
+                    caption = "Turn!"
+                elif n == 5:
+                    caption = "River!"
+                await roundstate.send_community_cards(channel, caption=caption)
                 roundstate.new_cycle_flag = False
 
             # print('previous raiser:', roundstate.previous_raiser.name)
-            else:
+            else:   # betting is finalized, on to pot splitting
                 break
 
         if roundstate.turn_number == 1:
@@ -546,6 +570,14 @@ async def turn(roundstate, channel):
 
     # show players game status
     status_embed = discord.Embed(title="Game status")
+    # if roundstate.public_cards[0].suit != 0:  # everything covered
+    #     status_embed.add_field(name="Cards",
+    #                            value=' - '.join([card.emojiprint() for card in roundstate.public_cards]))
+
+    await roundstate.public_cards.save_image_to("./files/CardImgBuffer.png")
+    cc_image = discord.File("./files/CardImgBuffer.png", "communitycards.png")
+    status_embed.set_thumbnail(url="attachment://communitycards.png")
+
     folded = roundstate.folded_players()
     if len(folded) != 0:
         status_embed.add_field(name="Folded", value=', '.join([p.name for p in folded]), inline=False)
@@ -566,7 +598,7 @@ async def turn(roundstate, channel):
     status_embed.add_field(name="Pot", value='$'+str(roundstate.pot_amount()))
     # status_embed.set_footer(text=player.name, icon_url=player.object().avatar_url)
 
-    await channel.send(embed=status_embed)  # send status update in chat
+    await channel.send(file=cc_image, embed=status_embed)  # send status update in chat
 
     print('initiated {}\'s turn'.format(player.name))
 

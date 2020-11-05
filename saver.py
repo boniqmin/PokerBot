@@ -72,7 +72,7 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
         self.player_index = sm_blind_index      # this one keeps track of whose turn it is
         self.turn_number = 1
         self.cycle_number = 0
-        self.new_cycle_flag = False
+        self.new_cycle_flag = True
         self.community_cards = cards_backend.CardSet(community_cards)
         self.public_cards = cards_backend.CardSet(5*[cards_backend.Card(0,0)])
         self.sidepots = [] #[0]
@@ -129,8 +129,8 @@ class RoundState: # TODO: make some of these private/local to init. Will poker()
         open_cards = self.community_cards[:n]
         self.public_cards = cards_backend.CardSet(open_cards + (5-n)*[cards_backend.Card(0, 0)])
 
-    async def send_community_cards(self, channel):
-        await self.public_cards.send_to(channel)
+    async def send_community_cards(self, channel, caption=None):
+        await self.public_cards.send_to(channel, caption)
 
     def pot_amount(self):
         return sum([p.prstate.invested for p in self.current_players])
