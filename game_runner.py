@@ -8,7 +8,7 @@ import pickle
 from random import randint
 
 testing = True  # This allows bots to join. Bots don't always appear in message.mentions, but can added by role
-# sike, not anymore. You have to make them say !join
+# sike, not anymore. You have to make them say !join. Change to Discord API :/
 
 if __name__ == '__main__':
     interface.run()
@@ -115,6 +115,36 @@ def channel_occupied(channel):
     save_file.close()
     return channel.id in save_dict
 
+
+def bot(user):
+    return user.bot and not testing
+
+
+def user_set_from_message(msg):
+    # obtains the set of users that are tagged in a message, by person, role, @here or @everyone
+    channel = msg.channel
+    cmd, *args = [s.lower() for s in msg.content[1:].split()]
+    if '@everyone' in args:
+        user_set = {u for u in channel.members if not bot(u)}  # msg.channel.members
+
+    else:
+        user_set = set()
+        if '@here' in args:
+            people = [member for member in channel.members if str(member.status) == "online"]
+            user_set = user_set.union({u for u in people if not bot(u)})
+
+        for role in msg.role_mentions:
+            print("role members:")
+            nameprint(role.members)
+            role_members_in_channel = set(role.members).intersection(set(channel.members))
+            print("of which in channel")
+            nameprint(role_members_in_channel)
+            user_set = user_set.union(role_members_in_channel)
+
+        user_set = user_set.union(set(msg.mentions))
+
+    return user_set
+
 # -------------------------------------------------------------------------------------------------------------------- #
 
 
@@ -182,10 +212,7 @@ def nameprint(player_list):
     print([p.name for p in player_list])
 
 
-async def lobby(host, channel):     # joining process and starting game
-    # await channel.send("The lobby is now open! The host can add players by typing \"!add\" and tagging members in "
-    #                    "the same message, or you can join yourself with \"!join\" if this is enabled. "
-    #                    "A maximum of 23 players can join.")
+async def lobby(host, channel, settings):     # joining process and starting game
     description = "The host can add players by typing \"!add\" and tagging members in" \
                   " the same message, or you can join yourself with \"!join\" if this is enabled. " \
                   "A maximum of 23 players can join."
@@ -201,65 +228,41 @@ async def lobby(host, channel):     # joining process and starting game
         return cmd in ['!join', '!start', '!add', '!remove', '!leave', '!botadd']
 
     while True:
-        def bot(user):
-            return user.bot and not testing
-
         print("User set:")
         nameprint(user_set)
         msg = await interface.wait_for_msg(channel, check=check)
         cmd, *args = [s.lower() for s in msg.content[1:].split()]
-        if cmd == 'join':  # and not msg.author.bot:
+        if cmd == 'join':
+            if settings['joining_mode'] == 3 and not moderator(msg.author, settings):
+                continue
+            if bot(msg.author):
+                continue
             user_set.add(msg.author)
             await channel.send("Welcome, {}".format(msg.author.name))
 
-        elif cmd == 'add' and msg.author == host:
-            if '@everyone' in args:
-                add_set = {u for u in channel.members if not bot(u)}  # msg.channel.members
+        elif cmd == 'add':
+            if not moderator(msg.author, settings):
+                continue
 
+            add_set = user_set_from_message(msg)
+            if len(add_set) == 0:
+                await channel.send("To use !add, tag at least one person, role, @ here or @ everyone"
+                                   " in the same message")
             else:
-                add_set = set()
-                if '@here' in args:
-                    people = [member for member in channel.members if str(member.status) == "online"]
-                    add_set = add_set.union({u for u in people if not bot(u)})
+                user_set = user_set.union(add_set)
+                await channel.send("Welcome {}".format(', '.join([member.name for member in add_set])))
 
-                for role in msg.role_mentions:
-                    print("role members:")
-                    nameprint(role.members)
-                    role_members_in_channel = set(role.members).intersection(set(channel.members))
-                    print("of which in channel")
-                    nameprint(role_members_in_channel)
-                    add_set = add_set.union(role_members_in_channel)
+        elif cmd == 'remove':
+            if not moderator(msg.author, settings):
+                continue
 
-                add_set = add_set.union(set(msg.mentions))
-                if len(add_set) == 0:
-                    await channel.send("To use !add, tag at least one person, role, @ here or @ everyone"
-                                       " in the same message")
-                    continue
-
-            print("Add_set")
-            nameprint(add_set)
-
-            user_set = user_set.union(add_set)
-            await channel.send("Welcome {}".format(', '.join([member.name for member in add_set])))
-
-        elif cmd == 'remove' and msg.author == host:  # TODO: make into same structure as add
-            if '@everyone' in args:
-                user_set = {host}
-                await channel.send("Removed everybody (except the host)")
+            remove_set = user_set_from_message(msg)
+            user_set = user_set.difference(remove_set)
+            if len(remove_set) == 0:
+                await channel.send("To use !remove, tag at least one person, role, @ here or @ everyone"
+                                   " in the same message")
             else:
-                if '@here' in args:
-                    remove_set = {member for member in channel.members if str(member.status) == "online"}.union(
-                        set(msg.mentions)
-                    )
-                else:
-                    remove_set = set(msg.mentions)
-                print("Remove set:")
-                nameprint(remove_set)
-                user_set = user_set.difference(remove_set)
-                if len(remove_set) == 0:
-                    await channel.send("Nobody was removed")
-                else:
-                    await channel.send("Removed {}".format(', '.join([member.name for member in remove_set])))
+                await channel.send("Removed {}".format(', '.join([member.name for member in remove_set])))
 
         elif cmd == 'leave':
             user_set.discard(msg.author)
@@ -308,7 +311,10 @@ async def new_game(host, channel):
         response = await interface.reaction_menu_replyv(yesnodict, host, sent_message)
         if response == 'no':
             return
-    userlist = await lobby(host, channel)
+
+    settings = await settings_menu(host, channel)
+
+    userlist = await lobby(host, channel, settings)
     # initlist = [900, 800, 1000]
     playerlist = [Player(p, 1000) for p in userlist]
     # playerlist = []
@@ -319,19 +325,49 @@ async def new_game(host, channel):
     await game(channel)
 
 
-
 # place somewhere else probably
+def moderator(user, settings):
+    mods = settings['moderators']
+    if mods is None:
+        return True
+    else:
+        return user in mods
 
 
-
-async def settings(host, channel, default_settings):
-    default_settings = {'moderator': [host]}
+async def settings_menu(host, channel):
+    settings = {'moderators': [host], 'joining_mode': 2}
     mod_embed = discord.Embed(title="Change who has moderator rights",
                               description="Default is just the host. ")
-    mod_embed.add_field(name="Tag people    Everybody", value="👨‍👩‍👦‍👦")
+
+    # Choose moderators
+    mod_embed.add_field(name="Tag people", value="🏷️")
+    mod_embed.add_field(name="Everybody", value="👨‍👩‍👦‍👦")
+    mod_embed.add_field(name="Host", value="🤵")
+    mod_message = await channel.send(embed=mod_embed)
+    choice = await interface.reaction_menu_replyv({'🏷️': 'tag', '👨‍👩‍👦‍👦': 'all', '🤵': 'host'}, host, mod_message)
+    if choice == 'tag':
+        await channel.send("Tag the people you want to make mods in a message starting with !mod")
+        reply = await interface.wait_for_msg(channel, lambda m: m.content[:4] == 'mod' and m.author == host)
+        settings['moderators'] = [host] + reply.mentions
+    elif choice == 'all':
+        settings['moderators'] = None
+
+    # Choose joining mode
+    joining_mode_embed = discord.Embed(title="Choose joining mode",
+                                       description="Channel members can join \n"
+                                                   "1. Freely at all times\n"
+                                                   "2. Freely before the game starts,"
+                                                   " during the game only added by mods\n"
+                                                   "3. Only mods can add players")  # default 2
+    join_message = await channel.send(embed=joining_mode_embed)
+    choice = await interface.reaction_menu_replyv({'1️⃣': 1, '2️': 2, '️️3️': 3}, host, join_message)
+    settings['joining_mode'] = choice
 
 
+    return settings
 
+
+#############
 
 async def jumpstart(channel):
     await game(channel)
@@ -349,7 +385,8 @@ async def game(channel):
 
 
 async def single_round_game(host, channel):
-    userlist = await lobby(host, channel)
+    settings = settings_menu(host, channel)
+    userlist = await lobby(host, channel, settings)
     playerlist = [Player(p, 1000) for p in userlist]
     gamestate = saver.GameState(channel, host, playerlist)
     gamestate.save()

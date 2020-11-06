@@ -22,7 +22,7 @@ def merge_images(filenames, formatting):
     for i in range(len(widths)):
         result.paste(im=images[i], box=(sum(widths[:i]), 0))
 
-    if 'scale' in formatting:
+    if 'scale' in formatting:  # discord rescales automatically, so this is useless
         scale = formatting['scale']
         result = result.resize((int(result.height*scale), int(result.width*scale)), Image.ANTIALIAS)
     return result
@@ -189,7 +189,8 @@ def check_flush(hand):
         for card in hand.cards:
             if card.suit == flush_suit:
                 flush_cards.append(card)
-        return [5] + sorted(flush_cards, reverse=True)[:5]  # 5 is hand code for flush. If there are more than 5 cards of a suit, take the highest 5
+        return [5] + sorted(flush_cards, reverse=True)[:5]
+        # 5 is hand code for flush. If there are more than 5 cards of a suit, take the highest 5
 
 
 def check_straight(hand):
