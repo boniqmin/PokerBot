@@ -5,6 +5,7 @@ import math
 import numpy as np
 import discord
 import pickle
+import copy
 from random import randint
 
 testing = True  # This allows bots to join. Bots don't always appear in message.mentions, but can added by role
@@ -297,23 +298,32 @@ async def lobby(host, channel, settings):     # joining process and starting gam
 
 
 async def new_game(host, channel):
+    yesnodict = {"✅": 'yes', "❌": 'no'}
     print('channel id:', channel.id)
     if channel_occupied(channel):
         channel_occ_embed = discord.Embed(title="There is an active game in this channel.",
                                           description="Do you want to end it and start a new one?",
                                           color=discord.Colour.red())
-        channel_occ_embed.add_field(name="Yes        No", value="[✅]--[❌]")
+        #channel_occ_embed.add_field(name="Yes        No", value="[✅]--[❌]")
         # channel_occ_embed.add_field(name="no", value=)
         sent_message = await channel.send(embed=channel_occ_embed)
         # await channel.send("There is an active game in this channel. Do you want to end it and start a new one?")
-        yesnodict = {"✅": 'yes', "❌": 'no'}
+
         # response = await interface.reaction_menu(yesnodict, host, channel)
         response = await interface.reaction_menu_replyv(yesnodict, host, sent_message)
         if response == 'no':
             return
 
-    settings = await settings_menu(host, channel)
-
+    change_settings_embed = discord.Embed(title="Do you want to change the settings?", color=discord.Colour.blue())
+    #change_settings_embed.add_field(name="Yes        No", value="[✅]--[❌]")
+    sent_message = await channel.send(embed=change_settings_embed)
+    response = await interface.reaction_menu_replyv(yesnodict, host, sent_message)
+    default_settings = {'mod_mode': 'host', 'joining_mode': 2}
+    if response == 'yes':
+        settings = await settings_menu(host, channel, default_settings)
+        await channel.send("Settings saved")
+    else:
+        settings = default_settings
     userlist = await lobby(host, channel, settings)
     # initlist = [900, 800, 1000]
     playerlist = [Player(p, 1000) for p in userlist]
@@ -334,23 +344,34 @@ def moderator(user, settings):
         return user in mods
 
 
-async def settings_menu(host, channel):
-    settings = {'moderators': [host], 'joining_mode': 2}
-    mod_embed = discord.Embed(title="Change who has moderator rights",
-                              description="Default is just the host. ")
+def set_moderators(x):
+    pass
+
+
+async def settings_menu(host, channel, default_settings):
+    settings = copy.copy(default_settings)
+    settings_trackers = []
 
     # Choose moderators
+    mod_embed = discord.Embed(title="Change who has moderator rights",
+                              description="Default is just the host. For the tagging option, tag users in a message "
+                                          "starting with !mod before you save the settings.")
+
+    mod_embed.add_field(name="Host", value="🤵")
     mod_embed.add_field(name="Tag people", value="🏷️")
     mod_embed.add_field(name="Everybody", value="👨‍👩‍👦‍👦")
-    mod_embed.add_field(name="Host", value="🤵")
+
     mod_message = await channel.send(embed=mod_embed)
-    choice = await interface.reaction_menu_replyv({'🏷️': 'tag', '👨‍👩‍👦‍👦': 'all', '🤵': 'host'}, host, mod_message)
-    if choice == 'tag':
-        await channel.send("Tag the people you want to make mods in a message starting with !mod")
-        reply = await interface.wait_for_msg(channel, lambda m: m.content[:4] == 'mod' and m.author == host)
-        settings['moderators'] = [host] + reply.mentions
-    elif choice == 'all':
-        settings['moderators'] = None
+    options_dict = {'🤵': 'host', '🏷️': 'tag', '👨‍👩‍👦‍👦': 'all'}
+    settings_trackers.append(await interface.button_tracker_menu(options_dict, mod_message, host, name='mod_mode'))
+
+    # choice = await interface.reaction_menu_replyv({'🤵': 'host', '🏷️': 'tag', '👨‍👩‍👦‍👦': 'all'}, host, mod_message)
+    # if choice == 'tag':
+    #     await channel.send("Tag the people you want to make mods in a message starting with !mod")
+    #     reply = await interface.wait_for_msg(channel, lambda m: m.content[:4] == 'mod' and m.author == host)
+    #     settings['moderators'] = list(user_set_from_message(reply).union(set(host)))
+    # elif choice == 'all':
+    #     settings['moderators'] = None
 
     # Choose joining mode
     joining_mode_embed = discord.Embed(title="Choose joining mode",
@@ -360,9 +381,41 @@ async def settings_menu(host, channel):
                                                    " during the game only added by mods\n"
                                                    "3. Only mods can add players")  # default 2
     join_message = await channel.send(embed=joining_mode_embed)
-    choice = await interface.reaction_menu_replyv({'1️⃣': 1, '2️': 2, '️️3️': 3}, host, join_message)
-    settings['joining_mode'] = choice
+    # choice = await interface.reaction_menu_replyv({'1️⃣': 1, '2️': 2, '️️3️': 3}, host, join_message)
+    options_dict = {'1️⃣': 1, '2️⃣': 2, '3️⃣': 3}
+    settings_trackers.append(await interface.button_tracker_menu(options_dict, join_message, host, name='joining_mode'))
 
+    multiple_votes_list = []
+
+    saving_embed = discord.Embed(title="Save your choices", color=discord.Colour.blue(),
+                                 description="Choose 💾 to save your choices, or ↩️to reset choices to default")
+    saving_message = await channel.send(embed=saving_embed)
+    saving_tracker = await interface.button_tracker_menu({'💾': "save", '↩': "default"}, saving_message, host)
+    while True:
+        choice = await saving_tracker.wait_for_reaction()
+        await saving_tracker.clear_votes()
+        if choice == "default":
+            return default_settings
+
+        for tracker in settings_trackers:
+            choice = await tracker.read()
+            if choice is None:
+                multiple_votes_list.append(tracker.name)
+            else:
+                settings[tracker.name] = choice
+        if len(multiple_votes_list) == 0:
+            break
+        else:
+            await channel.send("You selected multiple options for the following settings: {} \n"
+                         "Please select only 1 option for each and save.".format(', '.join(multiple_votes_list)))
+            multiple_votes_list = []
+
+    if settings['mod_mode'] == 'tag':
+        pass  # to be implemented
+    elif settings['mod_mode'] == 'host':
+        settings['moderators'] = [host]
+    elif settings['mod_mode'] == 'all':
+        settings['moderators'] = None
 
     return settings
 
